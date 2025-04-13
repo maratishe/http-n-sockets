@@ -182,14 +182,12 @@
     </div>
 
     <script>
-        // Globals
         let ws = null;
         let wsConnected = false;
         let wsAuthenticated = false;
         let requestCounter = 0;
         let pendingRequests = {};
         
-        // DOM Elements
         const operationMode = document.getElementById('operation-mode');
         const authKeyInput = document.getElementById('auth-key');
         const wsStatus = document.getElementById('ws-status');
@@ -205,15 +203,13 @@
         const retrieveBtn = document.getElementById('retrieveBtn');
         const retrieveResults = document.getElementById('retrieveResults');
         
-        // Initialize
         function init() {
-            // Setup event listeners
             operationMode.addEventListener('change', handleModeChange);
             authKeyInput.addEventListener('input', validateAuthKey);
             storeBtn.addEventListener('click', handleStoreText);
             retrieveBtn.addEventListener('click', handleRetrieveText);
             
-            // Setup clear buttons
+            // clear buttons
             document.querySelectorAll('.clear-btn').forEach(button => {
                 button.addEventListener('click', function() {
                     const targetId = this.getAttribute('data-target');
@@ -221,11 +217,11 @@
                 });
             });
             
-            // Initial mode setup
+            // init mode setup
             handleModeChange();
         }
         
-        // Handle operation mode change
+        // mode change (http versus ws)
         function handleModeChange() {
             const mode = operationMode.value;
             
@@ -245,7 +241,7 @@
             validateAuthKey();
         }
         
-        // Validate authentication key
+        // validate by authentication key
         function validateAuthKey() {
             const mode = operationMode.value;
             const authKey = authKeyInput.value.trim();
@@ -267,7 +263,7 @@
             }
         }
         
-        // WebSocket Functions
+        // WebSocket function (nested from connection)
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const authKey = authKeyInput.value.trim();
@@ -278,7 +274,7 @@
                 return;
             }
             
-            // Include auth key as URL parameter
+            // auth key is part of the URL!
             const wsUrl = `${protocol}//${window.location.host}?authKey=${encodeURIComponent(authKey)}`;
             
             updateWsStatus('connecting', 'Connecting...');
@@ -291,7 +287,7 @@
                 updateWsStatus('authenticated', 'Connected');
                 logToStore('WebSocket connection established');
                 
-                // Enable buttons since we're authenticated
+                // enable buttons since we're authenticated
                 storeBtn.disabled = false;
                 retrieveBtn.disabled = false;
             };
@@ -307,7 +303,7 @@
                 try {
                     const data = JSON.parse(event.data);
                     
-                    // Handle authentication response
+                    // authentication response
                     if (data.type === 'auth') {
                         if (data.status === 'success') {
                             wsAuthenticated = true;
@@ -322,7 +318,7 @@
                         return;
                     }
                     
-                    // Handle store/retrieve responses with requestId
+                    // store/retrieve responses with requestId
                     if (data.requestId && pendingRequests[data.requestId]) {
                         const { resolve, reject, type } = pendingRequests[data.requestId];
                         delete pendingRequests[data.requestId];
@@ -337,19 +333,19 @@
                         return;
                     }
                     
-                    // Handle generic info messages
+                    // generic info messages
                     if (data.type === 'info') {
                         logToStore(`Server info: ${data.message}`);
                         return;
                     }
                     
-                    // Handle errors
+                    // errors
                     if (data.type === 'error') {
                         logToStore(`Server error: ${data.message}`);
                         return;
                     }
                     
-                    // Unknown message type
+                    // unknown message type
                     logToStore(`Received unknown message: ${event.data}`);
                     
                 } catch (error) {
@@ -396,7 +392,7 @@
             }
         }
         
-        // Log utilities
+        // log utilities
         function logToStore(message) {
             const timestamp = new Date().toLocaleTimeString();
             storeLog.innerHTML += `[${timestamp}] ${message}\n`;
@@ -409,7 +405,7 @@
             retrieveResults.scrollTop = retrieveResults.scrollHeight;
         }
         
-        // Display retrieved data
+        // show retrieved data
         function displayRetrievedData(results) {
             retrieveResults.innerHTML = '';
             
@@ -468,14 +464,14 @@
                 
                 const requestId = `req_${Date.now()}_${requestCounter++}`;
                 
-                // Store the promise callbacks
+                // store the promise callbacks
                 pendingRequests[requestId] = {
                     resolve,
                     reject,
                     type
                 };
                 
-                // Send the request
+                // send the request
                 ws.send(JSON.stringify({
                     ...data,
                     type,
@@ -484,7 +480,7 @@
             });
         }
         
-        // Handle store text
+        // handle store text
         async function handleStoreText() {
             const text = storeTextArea.value.trim();
             if (!text) {
@@ -511,7 +507,7 @@
             }
         }
         
-        // Handle retrieve text
+        // handle retrieve text
         async function handleRetrieveText() {
             const mode = operationMode.value;
             
@@ -534,7 +530,7 @@
             }
         }
         
-        // Initialize on page load
+        // on page load
         document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>

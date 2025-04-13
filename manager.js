@@ -49,14 +49,14 @@ async function storeText(text) {
   
   console.log(`Storing text with length: ${text.length}`);
   
-  // Create a simplified storage object
+  // a simpe storage object
   const storageObject = {
     id: Date.now(), // Simple timestamp ID
     text: text,
     timestamp: new Date().toISOString()
   };
   
-  // Write to file
+  // save to file
   fs.writeFileSync(STORAGE_FILE, JSON.stringify(storageObject, null, 2));
   
   console.log(`Successfully stored text with ID: ${storageObject.id}`);
@@ -67,7 +67,6 @@ async function storeText(text) {
   };
 }
 
-// Core function for retrieving text
 async function retrieveText() {
   console.log('Retrieving stored text');
   
@@ -80,11 +79,11 @@ async function retrieveText() {
   }
   
   try {
-    // Read from file
+    // read from file
     const data = fs.readFileSync(STORAGE_FILE, 'utf8');
     const storageObject = JSON.parse(data);
     
-    // Format the result with only relevant fields
+    // return as object (easily extendable in the future)
     const result = {
       id: storageObject.id,
       text: storageObject.text,
@@ -131,11 +130,11 @@ app.post('/retrieve', async (req, res) => {
 
 // ================ WEBSOCKET SERVER ================
 
-// Create WebSocket server
+// init WebSocket server
 const wss = new WebSocketServer({ 
   server,
   verifyClient: ({ req }) => {
-    // Extract auth key from URL query parameters
+    // extract auth key from URL query parameters
     const url = new URL(req.url, `http://${req.headers.host}`);
     const authKey = url.searchParams.get('authKey');
     return authKey === AUTH_KEY;
@@ -144,12 +143,12 @@ const wss = new WebSocketServer({
 
 // WebSocket connection handler
 wss.on('connection', function connection(ws, req) {
-  // Since connection is already authenticated, set as authenticated
+  // auready authenticated at connection time
   const authenticated = true;
   
   console.log('New WebSocket connection established (authenticated)');
   
-  // Send welcome message
+  // send welcome message
   ws.send(JSON.stringify({
     type: 'info',
     message: 'Connected to simple storage server.'
@@ -160,8 +159,7 @@ wss.on('connection', function connection(ws, req) {
     try {
       const data = JSON.parse(message);
       
-      // Remove the auth handler section
-      // Handle operations directly
+      // switch by type of message
       switch (data.type) {
         case 'store':
           console.log('(websocket) store command)');
@@ -219,20 +217,20 @@ wss.on('connection', function connection(ws, req) {
     }
   });
   
-  // Handle disconnection
+  // disconnection handler
   ws.on('close', function close() {
     console.log('WebSocket connection closed');
   });
 });
 
-// Start the server
+// start server
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Storage file: ${STORAGE_FILE}`);
   console.log(`WebSocket and HTTP endpoints available`);
 });
 
-// Handle server shutdown
+// server shutdown
 process.on('SIGINT', () => {
   console.log('Shutting down server...');
   process.exit(0);
