@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A simple demo for HTTP (req/rep) versus WebSockets (messages)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .card {
+            flex: 1 1 400px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], textarea, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-family: inherit;
+            font-size: 14px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 5px;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .section-log {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            white-space: pre-wrap;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .operation-mode {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .log-header h3 {
+            margin: 0;
+        }
+        .connection-status {
+            text-align: right;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .status-connected {
+            background-color: #4CAF50;
+        }
+        .status-disconnected {
+            background-color: #f44336;
+        }
+        .status-authenticating {
+            background-color: #FFA500;
+        }
+        .clear-btn {
+            background-color: #f44336;
+            font-size: 12px;
+            padding: 5px 10px;
+        }
+        .data-item {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+        .data-item pre {
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>A simple demo for HTTP (req/rep) versus WebSockets (messages)</h1>
+    <h3>With basic authentication added to both for minimal security</h3>
+    
+    <div class="operation-mode">
+        <label for="operation-mode">Operation Mode:</label>
+        <select id="operation-mode">
+            <option value="http">HTTP (REST API)</option>
+            <option value="ws">WebSocket</option>
+        </select>
+    </div>
+    
+    <div class="form-group">
+        <label for="auth-key">Authentication Key:</label>
+        <input type="text" id="auth-key" value="7803a4fa7f34eedfda91dfd8b622f1b0" placeholder="Enter your authentication key">
+    </div>
+    
+    <div id="ws-status" class="connection-status" style="display: none;">
+        <span class="status-indicator status-disconnected"></span>
+        <span class="status-text">Disconnected</span>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2>Store Text</h2>
+            <div class="form-group">
+                <label for="storeText">Text to Store:</label>
+                <textarea id="storeText" rows="5" placeholder="Enter text to store"></textarea>
+            </div>
+            <button id="storeBtn" disabled>Store Text</button>
+            <div class="form-group">
+                <div class="log-header">
+                    <h3>Store Log</h3>
+                    <button class="clear-btn" data-target="storeLog">Clear</button>
+                </div>
+                <div id="storeLog" class="section-log"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Retrieve Text</h2>
+            <button id="retrieveBtn" disabled>Retrieve Stored Text</button>
+            <div class="form-group">
+                <div class="log-header">
+                    <h3>Retrieved Data</h3>
+                    <button class="clear-btn" data-target="retrieveResults">Clear</button>
+                </div>
+                <div id="retrieveResults" class="section-log"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Globals
+        let ws = null;
+        let wsConnected = false;
+        let wsAuthenticated = false;
+        let requestCounter = 0;
+        let pendingRequests = {};
+        
+        // DOM Elements
+        const operationMode = document.getElementById('operation-mode');
+        const authKeyInput = document.getElementById('auth-key');
+        const wsStatus = document.getElementById('ws-status');
+        const statusIndicator = wsStatus.querySelector('.status-indicator');
+        const statusText = wsStatus.querySelector('.status-text');
+        
+        const storeTextArea = document.getElementById('storeText');
+        const storeTagsInput = document.getElementById('storeTags');
+        const storeJsonArea = document.getElementById('storeJson');
+        const storeBtn = document.getElementById('storeBtn');
+        const storeLog = document.getElementById('storeLog');
+        
+        const retrieveBtn = document.getElementById('retrieveBtn');
+        const retrieveResults = document.getElementById('retrieveResults');
+        
+        // Initialize
+        function init() {
+            // Setup event listeners
+            operationMode.addEventListener('change', handleModeChange);
+            authKeyInput.addEventListener('input', validateAuthKey);
+            storeBtn.addEventListener('click', handleStoreText);
+            retrieveBtn.addEventListener('click', handleRetrieveText);
+            
+            // Setup clear buttons
+            document.querySelectorAll('.clear-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const targetId = this.getAttribute('data-target');
+                    document.getElementById(targetId).innerHTML = '';
+                });
+            });
+            
+            // Initial mode setup
+            handleModeChange();
+        }
+        
+        // Handle operation mode change
+        function handleModeChange() {
+            const mode = operationMode.value;
+            
+            if (mode === 'ws') {
+                wsStatus.style.display = 'block';
+                connectWebSocket();
+            } else {
+                wsStatus.style.display = 'none';
+                if (ws) {
+                    ws.close();
+                    ws = null;
+                    wsConnected = false;
+                    wsAuthenticated = false;
+                }
+            }
+            
+            validateAuthKey();
+        }
+        
+        // Validate authentication key
+        function validateAuthKey() {
+            const mode = operationMode.value;
+            const authKey = authKeyInput.value.trim();
+            
+            if (mode === 'http') {
+                storeBtn.disabled = !authKey;
+                retrieveBtn.disabled = !authKey;
+            } else {
+                if (wsConnected) {
+                    if (authKey && !wsAuthenticated) {
+                        authenticateWs(authKey);
+                    }
+                    storeBtn.disabled = !wsAuthenticated;
+                    retrieveBtn.disabled = !wsAuthenticated;
+                } else {
+                    storeBtn.disabled = true;
+                    retrieveBtn.disabled = true;
+                }
+            }
+        }
+        
+        // WebSocket Functions
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const authKey = authKeyInput.value.trim();
+            
+            if (!authKey) {
+                logToStore('Authentication key is required for WebSocket connection');
+                updateWsStatus('disconnected', 'Auth Key Required');
+                return;
+            }
+            
+            // Include auth key as URL parameter
+            const wsUrl = `${protocol}//${window.location.host}?authKey=${encodeURIComponent(authKey)}`;
+            
+            updateWsStatus('connecting', 'Connecting...');
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                wsConnected = true;
+                wsAuthenticated = true; // Already authenticated via URL param
+                updateWsStatus('authenticated', 'Connected');
+                logToStore('WebSocket connection established');
+                
+                // Enable buttons since we're authenticated
+                storeBtn.disabled = false;
+                retrieveBtn.disabled = false;
+            };
+            
+            // The rest of the WebSocket setup remains the same
+            
+            ws.onerror = (error) => {
+                logToStore(`WebSocket error: ${error.message || 'Authentication failed'}`);
+                updateWsStatus('error', 'Connection Error');
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    // Handle authentication response
+                    if (data.type === 'auth') {
+                        if (data.status === 'success') {
+                            wsAuthenticated = true;
+                            updateWsStatus('authenticated', 'Authenticated');
+                            logToStore('WebSocket authenticated successfully');
+                            validateAuthKey();
+                        } else {
+                            wsAuthenticated = false;
+                            updateWsStatus('auth-failed', 'Auth Failed');
+                            logToStore(`Authentication failed: ${data.message}`);
+                        }
+                        return;
+                    }
+                    
+                    // Handle store/retrieve responses with requestId
+                    if (data.requestId && pendingRequests[data.requestId]) {
+                        const { resolve, reject, type } = pendingRequests[data.requestId];
+                        delete pendingRequests[data.requestId];
+                        
+                        if (data.status === 'success') {
+                            resolve(data);
+                            logToStore(`${type} operation successful: ${JSON.stringify(data)}`);
+                        } else {
+                            reject(new Error(data.message || 'Unknown error'));
+                            logToStore(`${type} operation failed: ${data.message}`);
+                        }
+                        return;
+                    }
+                    
+                    // Handle generic info messages
+                    if (data.type === 'info') {
+                        logToStore(`Server info: ${data.message}`);
+                        return;
+                    }
+                    
+                    // Handle errors
+                    if (data.type === 'error') {
+                        logToStore(`Server error: ${data.message}`);
+                        return;
+                    }
+                    
+                    // Unknown message type
+                    logToStore(`Received unknown message: ${event.data}`);
+                    
+                } catch (error) {
+                    logToStore(`Error parsing WebSocket message: ${error.message}`);
+                }
+            };
+        }
+        
+        function authenticateWs(key) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            
+            updateWsStatus('authenticating', 'Authenticating...');
+            
+            ws.send(JSON.stringify({
+                type: 'auth',
+                key: key
+            }));
+        }
+        
+        function updateWsStatus(status, text) {
+            statusText.textContent = text;
+            statusIndicator.className = 'status-indicator';
+            
+            switch (status) {
+                case 'connected':
+                    statusIndicator.classList.add('status-connected');
+                    break;
+                case 'disconnected':
+                    statusIndicator.classList.add('status-disconnected');
+                    break;
+                case 'connecting':
+                case 'authenticating':
+                    statusIndicator.classList.add('status-authenticating');
+                    break;
+                case 'authenticated':
+                    statusIndicator.classList.add('status-connected');
+                    break;
+                case 'auth-failed':
+                case 'error':
+                    statusIndicator.classList.add('status-disconnected');
+                    break;
+                default:
+                    statusIndicator.classList.add('status-disconnected');
+            }
+        }
+        
+        // Log utilities
+        function logToStore(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            storeLog.innerHTML += `[${timestamp}] ${message}\n`;
+            storeLog.scrollTop = storeLog.scrollHeight;
+        }
+        
+        function logToRetrieve(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            retrieveResults.innerHTML += `[${timestamp}] ${message}\n`;
+            retrieveResults.scrollTop = retrieveResults.scrollHeight;
+        }
+        
+        // Display retrieved data
+        function displayRetrievedData(results) {
+            retrieveResults.innerHTML = '';
+            
+            if (!results || results.length === 0) {
+                logToRetrieve('No data found');
+                return;
+            }
+            
+            results.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'data-item';
+                div.innerHTML = item.text;
+                retrieveResults.appendChild(div);
+            });
+        }
+        
+        // HTTP API Functions
+        async function httpApiCall(endpoint, data) {
+            const authKey = authKeyInput.value.trim();
+            if (!authKey) throw new Error('Authentication key is required');
+            
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Auth-Key': authKey
+                },
+                body: JSON.stringify(data)
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                try {
+                    const errorJson = JSON.parse(errorText);
+                    throw new Error(errorJson.error || `HTTP error ${response.status}`);
+                } catch (e) {
+                    throw new Error(`HTTP error ${response.status}: ${errorText}`);
+                }
+            }
+            
+            return response.json();
+        }
+        
+        // WebSocket API Functions
+        function wsApiCall(type, data) {
+            return new Promise((resolve, reject) => {
+                if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    reject(new Error('WebSocket is not connected'));
+                    return;
+                }
+                
+                if (!wsAuthenticated) {
+                    reject(new Error('WebSocket is not authenticated'));
+                    return;
+                }
+                
+                const requestId = `req_${Date.now()}_${requestCounter++}`;
+                
+                // Store the promise callbacks
+                pendingRequests[requestId] = {
+                    resolve,
+                    reject,
+                    type
+                };
+                
+                // Send the request
+                ws.send(JSON.stringify({
+                    ...data,
+                    type,
+                    requestId
+                }));
+            });
+        }
+        
+        // Handle store text
+        async function handleStoreText() {
+            const text = storeTextArea.value.trim();
+            if (!text) {
+                logToStore('Error: Text is required');
+                return;
+            }
+            
+            const mode = operationMode.value;
+            
+            try {
+                let result;
+                
+                if (mode === 'http') {
+                    logToStore('Sending HTTP store request...');
+                    result = await httpApiCall('/store', { text });
+                } else {
+                    logToStore('Sending WebSocket store request...');
+                    result = await wsApiCall('store', { text });
+                }
+                
+                logToStore(`Store successful: ID=${result.id || result.result?.id}`);
+            } catch (error) {
+                logToStore(`Store error: ${error.message}`);
+            }
+        }
+        
+        // Handle retrieve text
+        async function handleRetrieveText() {
+            const mode = operationMode.value;
+            
+            try {
+                let result;
+                
+                if (mode === 'http') {
+                    logToRetrieve('Sending HTTP retrieve request...');
+                    result = await httpApiCall('/retrieve', {});
+                    displayRetrievedData(result.results);
+                } else {
+                    logToRetrieve('Sending WebSocket retrieve request...');
+                    result = await wsApiCall('retrieve', {});
+                    displayRetrievedData(result.results);
+                }
+                
+                logToRetrieve('Retrieve successful');
+            } catch (error) {
+                logToRetrieve(`Retrieve error: ${error.message}`);
+            }
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
